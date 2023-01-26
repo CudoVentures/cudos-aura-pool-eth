@@ -62,6 +62,7 @@ contract CudosAuraPool is ReentrancyGuard {
         payment.id = paymentId;
         payment.payee = msg.sender;
         payment.amount = msg.value;
+        payment.status = PaymentStatus.Locked;
         payment.cudosAddress = cudosAddress;
 
         paymentIds.push(paymentId);
