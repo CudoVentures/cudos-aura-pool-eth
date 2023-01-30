@@ -3,7 +3,9 @@ pragma solidity ^0.8.0;
 
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/utils/math/SafeMath.sol";
+import "@openzeppelin/contracts/utils/Address.sol";
 import "./CudosAccessControls.sol";
+import "hardhat/console.sol";
 
 contract CudosAuraPool is ReentrancyGuard {
     using SafeMath for uint256;
@@ -26,12 +28,13 @@ contract CudosAuraPool is ReentrancyGuard {
 
     CudosAccessControls public immutable cudosAccessControls;
     mapping(bytes32 => Payment) public payments;
+    mapping(address => bytes32[]) public paymentIdsByAddress;
     bytes32[] public paymentIds;
 
     event NftMinted(
         bytes32 paymentId,
         uint256 amount,
-        address sender,
+        address indexed sender,
         bytes32 cudosAddress
     );
     event WithdrawalsUnlocked(bytes32 paymentId);
@@ -42,48 +45,67 @@ contract CudosAuraPool is ReentrancyGuard {
     modifier onlyAdmin() {
         require(
             cudosAccessControls.hasAdminRole(msg.sender),
-            "Recipient is not an admin"
+            "Recipient is not an admin!"
         );
         _;
     }
 
-    constructor(CudosAccessControls _cudosAccessControls) {
+    constructor(CudosAccessControls _cudosAccessControls) payable {
+        require(
+            address(_cudosAccessControls) != address(0) &&
+                Address.isContract(address(_cudosAccessControls)),
+            "Invalid CudosAccessControls address!"
+        );
         cudosAccessControls = _cudosAccessControls;
     }
 
-    function mintNft(bytes32 paymentId, bytes32 cudosAddress) external payable {
-        require(msg.value > 0 wei, "Amount must be positive!");
-        require(msg.sender.balance >= msg.value, "Insufficient balance!");
-        require(paymentId.length > 0, "PaymentId cannot be empty!");
-        require(cudosAddress.length > 0, "Cudos address cannot be empty!");
-        require(payments[paymentId].id.length == 0, "PaymentId already used!");
+    function sendPayment(bytes32 paymentId, bytes32 cudosAddress)
+        external
+        payable
+        nonReentrant
+    {
+        require(msg.value > 0, "Amount must be positive!");
+        require(payments[paymentId].amount == 0, "PaymentId already used!");
+        require(paymentId != bytes32(0), "PaymentId cannot be empty!");
+        require(cudosAddress != bytes32(0), "CudosAddress cannot be empty!");
 
         Payment storage payment = payments[paymentId];
         payment.id = paymentId;
         payment.payee = msg.sender;
         payment.amount = msg.value;
-        payment.status = PaymentStatus.Locked;
         payment.cudosAddress = cudosAddress;
 
+        paymentIdsByAddress[msg.sender].push(paymentId);
         paymentIds.push(paymentId);
 
         emit NftMinted(paymentId, msg.value, msg.sender, cudosAddress);
     }
 
-    function unlockPaymentWithdraw(bytes32 paymentId) external onlyAdmin {
+    function unlockPaymentWithdraw(bytes32 paymentId)
+        external
+        onlyAdmin
+        nonReentrant
+    {
+        require(payments[paymentId].amount > 0, "Non existing paymentId!");
+        require(
+            payments[paymentId].status == PaymentStatus.Locked,
+            "Payment is not locked!"
+        );
         payments[paymentId].status = PaymentStatus.Withdrawable;
 
         emit WithdrawalsUnlocked(paymentId);
     }
 
-    function withdrawPayments() external {
+    function withdrawPayments() external nonReentrant {
+        if (paymentIdsByAddress[msg.sender].length == 0) {
+            return;
+        }
+
+        bytes32[] memory ids = paymentIdsByAddress[msg.sender];
         uint256 totalAmount;
-        for (uint256 i; i < paymentIds.length; ++i) {
-            Payment storage payment = payments[paymentIds[i]];
-            if (
-                payment.status != PaymentStatus.Withdrawable ||
-                payment.payee != msg.sender
-            ) {
+        for (uint256 i = 0; i < ids.length; ++i) {
+            Payment storage payment = payments[ids[i]];
+            if (payment.status != PaymentStatus.Withdrawable) {
                 continue;
             }
 
@@ -96,15 +118,24 @@ contract CudosAuraPool is ReentrancyGuard {
         emit PaymentsWithdrawn(msg.sender);
     }
 
-    function markPaymentFinished(bytes32 paymentId) external onlyAdmin {
+    function markPaymentFinished(bytes32 paymentId)
+        external
+        onlyAdmin
+        nonReentrant
+    {
+        require(payments[paymentId].amount > 0, "Non existing paymentId!");
+        require(
+            payments[paymentId].status == PaymentStatus.Locked,
+            "Payment not locked!"
+        );
         payments[paymentId].status = PaymentStatus.Finished;
 
         emit MarkedAsFinished(paymentId);
     }
 
-    function withdrawFinishedPayments() external onlyAdmin {
+    function withdrawFinishedPayments() external onlyAdmin nonReentrant {
         uint256 totalAmount;
-        for (uint256 i; i < paymentIds.length; ++i) {
+        for (uint256 i = 0; i < paymentIds.length; ++i) {
             Payment storage payment = payments[paymentIds[i]];
             if (payment.status != PaymentStatus.Finished) {
                 continue;
@@ -124,26 +155,19 @@ contract CudosAuraPool is ReentrancyGuard {
         view
         returns (PaymentStatus)
     {
-        require(payments[paymentId].id.length > 0, "Non existing paymentId!");
+        require(payments[paymentId].amount > 0, "Non existing paymentId!");
 
         return payments[paymentId].status;
     }
 
     function getPayments() external view returns (Payment[] memory) {
-        Payment[] memory paymentsRes = new Payment[](paymentIds.length);
-        uint256 nextPaymentIndex = 0;
+        bytes32[] memory ids = paymentIdsByAddress[msg.sender];
+        Payment[] memory paymentsFiltered = new Payment[](ids.length);
 
-        for (uint256 i; i < paymentIds.length; ++i) {
-            bytes32 paymentId = paymentIds[i];
-            Payment memory payment = payments[paymentId];
-            if (payment.payee != msg.sender) {
-                continue;
-            }
-
-            paymentsRes[nextPaymentIndex] = payment;
-            nextPaymentIndex++;
+        for (uint256 i = 0; i < ids.length; ++i) {
+            paymentsFiltered[i] = payments[ids[i]];
         }
 
-        return paymentsRes;
+        return paymentsFiltered;
     }
 }

@@ -1,8 +1,25 @@
 {
-  "name": "hardhat-project",
+  "name": "cudos-aura-pool-eth",
+  "scripts": {
+    "build": "npx hardhat compile",
+    "test": "npx hardhat test",
+    "deploy": "npx hardhat run ./scripts/deploy.ts",
+    "coverage": "npx hardhat coverage --network localhost",
+    "solhint": "npx solhint './contracts/CudosAuraPool.sol' "
+  },
   "devDependencies": {
+    "@nomicfoundation/hardhat-chai-matchers": "^1.0.5",
     "@nomicfoundation/hardhat-toolbox": "^2.0.1",
     "@openzeppelin/contracts": "^4.8.1",
-    "hardhat": "^2.12.6"
+    "@typechain/ethers-v5": "^10.2.0",
+    "@typechain/hardhat": "^6.1.5",
+    "ganache-cli": "^6.12.2",
+    "hardhat": "^2.12.6",
+    "solhint": "^3.3.8",
+    "solidity-coverage": "^0.8.2",
+    "typechain": "^8.1.1"
+  },
+  "dependencies": {
+    "dotenv": "^16.0.3"
   }
 }

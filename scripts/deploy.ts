@@ -1,23 +1,39 @@
-import { ethers } from "hardhat";
+import { run, ethers } from "hardhat";
+import { CudosAccessControls__factory, CudosAuraPool__factory } from "../typechain-types";
 
 async function main() {
-  const currentTimestampInSeconds = Math.round(Date.now() / 1000);
-  const ONE_YEAR_IN_SECS = 365 * 24 * 60 * 60;
-  const unlockTime = currentTimestampInSeconds + ONE_YEAR_IN_SECS;
+    const [alice] = await ethers.getSigners();
 
-  const lockedAmount = ethers.utils.parseEther("1");
+    let cudosAccessControlAddress = process.env.CUDOS_ACCESS_CONTROLS_ADDRESS ?? "";
 
-  const Lock = await ethers.getContractFactory("Lock");
-  const lock = await Lock.deploy(unlockTime, { value: lockedAmount });
+    if (cudosAccessControlAddress == "") {
+        console.log(
+            "'CUDOS_ACCESS_CONTROLS_ADDRESS' is empty, deploying CudosAccessControl contract."
+        );
+        const cudosAccessControls = await new CudosAccessControls__factory(alice).deploy();
+        await cudosAccessControls.deployed();
+        cudosAccessControlAddress = cudosAccessControls.address;
+        console.log("CudosAccessControl contract deployed at address " + cudosAccessControlAddress);
 
-  await lock.deployed();
+        await run("verify:verify", {
+            address: cudosAccessControlAddress,
+            constructorArguments: [],
+        });
+    }
 
-  console.log(`Lock with 1 ETH and unlock timestamp ${unlockTime} deployed to ${lock.address}`);
+    const cudosAuraPool = await new CudosAuraPool__factory(alice).deploy(cudosAccessControlAddress);
+    await cudosAuraPool.deployed();
+    console.log("CudosAuraPool contract deployed at address " + cudosAuraPool.address);
+
+    await cudosAuraPool.deployTransaction.wait(5);
+
+    await run("verify:verify", {
+        address: cudosAuraPool.address,
+        constructorArguments: [cudosAccessControlAddress],
+    });
 }
 
-// We recommend this pattern to be able to use async/await everywhere
-// and properly handle errors.
 main().catch((error) => {
-  console.error(error);
-  process.exitCode = 1;
+    console.error(error);
+    process.exitCode = 1;
 });
