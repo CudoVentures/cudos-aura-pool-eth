@@ -2,7 +2,7 @@ import { run, ethers } from "hardhat";
 import { CudosAccessControls__factory, CudosAuraPool__factory } from "../typechain-types";
 
 async function main() {
-    const [alice] = await ethers.getSigners();
+    const [wallet] = await ethers.getSigners();
 
     let cudosAccessControlAddress = process.env.CUDOS_ACCESS_CONTROLS_ADDRESS ?? "";
 
@@ -10,10 +10,12 @@ async function main() {
         console.log(
             "'CUDOS_ACCESS_CONTROLS_ADDRESS' is empty, deploying CudosAccessControl contract."
         );
-        const cudosAccessControls = await new CudosAccessControls__factory(alice).deploy();
+        const cudosAccessControls = await new CudosAccessControls__factory(wallet).deploy();
         await cudosAccessControls.deployed();
         cudosAccessControlAddress = cudosAccessControls.address;
         console.log("CudosAccessControl contract deployed at address " + cudosAccessControlAddress);
+
+        await cudosAccessControls.deployTransaction.wait(5);
 
         await run("verify:verify", {
             address: cudosAccessControlAddress,
@@ -21,7 +23,8 @@ async function main() {
         });
     }
 
-    const cudosAuraPool = await new CudosAuraPool__factory(alice).deploy(cudosAccessControlAddress);
+
+    const cudosAuraPool = await new CudosAuraPool__factory(wallet).deploy(cudosAccessControlAddress);
     await cudosAuraPool.deployed();
     console.log("CudosAuraPool contract deployed at address " + cudosAuraPool.address);
 

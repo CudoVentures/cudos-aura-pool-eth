@@ -13,9 +13,10 @@ describe("CudosAuraPool", () => {
     let user: SignerWithAddress;
     let cudosAuraPool: CudosAuraPool;
 
-    const id = ethers.utils.formatBytes32String("1234567890");
-    const cudosAddr = ethers.utils.formatBytes32String("1234567890");
-    const empty = ethers.utils.formatBytes32String("");
+    const nftId = ethers.utils.toUtf8Bytes("7a00c0e9-0187-4652-9166-8cb55f611411");
+    const cudosAddr = ethers.utils.toUtf8Bytes("cudos1xcnugwrzfxvp0fzuz9uj9x5u4pq44w4knelcgx");
+    const empty = ethers.utils.toUtf8Bytes("");
+
     const amount = ethers.utils.parseEther("0.00000000001");
 
     enum PaymentStatus {
@@ -48,48 +49,93 @@ describe("CudosAuraPool", () => {
 
     describe("sendPayment()", () => {
         it("valid", async () => {
-            await expect(cudosAuraPool.sendPayment(id, cudosAddr, { value: amount }))
+            await expect(cudosAuraPool.sendPayment(nftId, cudosAddr, { value: amount }))
                 .emit(cudosAuraPool, "NftMinted")
-                .withArgs(id, amount, admin.address, cudosAddr)
+                .withArgs(1, nftId, amount, admin.address, cudosAddr)
                 .and.to.changeEtherBalances([admin, cudosAuraPool], [-amount, amount]);
 
-            const payment = await cudosAuraPool.payments(id);
+            const payment = await cudosAuraPool.payments(1);
 
             expect({
-                id: payment.id,
+                id: payment.paymentId,
+                nftId: payment.nftId,
                 payee: payment.payee,
                 amount: payment.amount,
                 status: payment.status,
                 cudosAddress: payment.cudosAddress,
             }).eql({
-                id: id,
+                id: 1,
+                nftId: ethers.utils.hexlify(nftId),
                 payee: admin.address,
                 amount: amount,
                 status: PaymentStatus.Locked,
-                cudosAddress: cudosAddr,
+                cudosAddress: ethers.utils.hexlify(cudosAddr),
             });
         });
 
         it("dublicate paymentId", async () => {
-            await cudosAuraPool.sendPayment(id, cudosAddr, { value: amount });
+            await cudosAuraPool.sendPayment(nftId, cudosAddr, { value: amount });
 
-            await expect(cudosAuraPool.sendPayment(id, cudosAddr, { value: amount })).revertedWith(
-                "PaymentId already used!"
+            await expect(cudosAuraPool.sendPayment(nftId, cudosAddr, { value: amount })).revertedWith(
+                "NftId minted or pending!"
             );
+        });
+
+        it("dublicate paymentId after payment finished", async () => {
+            await cudosAuraPool.sendPayment(nftId, cudosAddr, { value: amount });
+
+            await expect(cudosAuraPool.markPaymentFinished(1))
+            .emit(cudosAuraPool, "MarkedAsFinished")
+            .withArgs(1);
+            
+            await expect(cudosAuraPool.sendPayment(nftId, cudosAddr, { value: amount })).revertedWith(
+                "NftId minted or pending!"
+            );
+        });
+
+        it("dublicate paymentId after withdraw unlock", async () => {
+            await cudosAuraPool.sendPayment(nftId, cudosAddr, { value: amount });
+
+            await expect(cudosAuraPool.unlockPaymentWithdraw(1))
+                .emit(cudosAuraPool, "WithdrawalsUnlocked")
+                .withArgs(1);
+
+            await expect(cudosAuraPool.sendPayment(nftId, cudosAddr, { value: amount }))
+                .emit(cudosAuraPool, "NftMinted")
+                .withArgs(2, nftId, amount, admin.address, cudosAddr)
+                .and.to.changeEtherBalances([admin, cudosAuraPool], [-amount, amount]);
+
+            const payment = await cudosAuraPool.payments(2);
+
+            expect({
+                id: payment.paymentId,
+                nftId: payment.nftId,
+                payee: payment.payee,
+                amount: payment.amount,
+                status: payment.status,
+                cudosAddress: payment.cudosAddress,
+            }).eql({
+                id: 2,
+                nftId: ethers.utils.hexlify(nftId),
+                payee: admin.address,
+                amount: amount,
+                status: PaymentStatus.Locked,
+                cudosAddress: ethers.utils.hexlify(cudosAddr),
+            });
         });
 
         it("empty paymentId", async () => {
             await expect(
                 cudosAuraPool.sendPayment(empty, cudosAddr, { value: amount })
-            ).revertedWith("PaymentId cannot be empty!");
+            ).revertedWith("NftId cannot be empty!");
         });
         it("empty cudosAddress", async () => {
-            await expect(cudosAuraPool.sendPayment(id, empty, { value: amount })).revertedWith(
+            await expect(cudosAuraPool.sendPayment(nftId, empty, { value: amount })).revertedWith(
                 "CudosAddress cannot be empty!"
             );
         });
         it("zero amount", async () => {
-            await expect(cudosAuraPool.sendPayment(id, cudosAddr)).revertedWith(
+            await expect(cudosAuraPool.sendPayment(nftId, cudosAddr)).revertedWith(
                 "Amount must be positive!"
             );
         });
@@ -97,37 +143,37 @@ describe("CudosAuraPool", () => {
 
     describe("unlockPaymentWithdraw()", () => {
         it("valid", async () => {
-            await cudosAuraPool.sendPayment(id, cudosAddr, {
+            await cudosAuraPool.sendPayment(nftId, cudosAddr, {
                 value: amount,
             });
 
-            await expect(cudosAuraPool.unlockPaymentWithdraw(id))
+            await expect(cudosAuraPool.unlockPaymentWithdraw(1))
                 .emit(cudosAuraPool, "WithdrawalsUnlocked")
-                .withArgs(id);
+                .withArgs(1);
 
-            expect(await cudosAuraPool.getPaymentStatus(id)).equal(PaymentStatus.Withdrawable);
+            expect(await cudosAuraPool.getPaymentStatus(1)).equal(PaymentStatus.Withdrawable);
         });
 
         it("not admin", async () => {
-            await cudosAuraPool.sendPayment(id, cudosAddr, { value: amount });
+            await cudosAuraPool.sendPayment(nftId, cudosAddr, { value: amount });
 
-            await expect(cudosAuraPool.connect(user).unlockPaymentWithdraw(id)).revertedWith(
+            await expect(cudosAuraPool.connect(user).unlockPaymentWithdraw(1)).revertedWith(
                 "Recipient is not an admin!"
             );
         });
 
         it("not locked status", async () => {
-            await cudosAuraPool.sendPayment(id, cudosAddr, { value: amount });
+            await cudosAuraPool.sendPayment(nftId, cudosAddr, { value: amount });
 
-            await cudosAuraPool.unlockPaymentWithdraw(id);
+            await cudosAuraPool.unlockPaymentWithdraw(1);
 
-            await expect(cudosAuraPool.unlockPaymentWithdraw(id)).revertedWith(
+            await expect(cudosAuraPool.unlockPaymentWithdraw(1)).revertedWith(
                 "Payment is not locked!"
             );
         });
 
         it("not existing payment", async () => {
-            await expect(cudosAuraPool.unlockPaymentWithdraw(id)).revertedWith(
+            await expect(cudosAuraPool.unlockPaymentWithdraw(1)).revertedWith(
                 "Non existing paymentId!"
             );
         });
@@ -135,37 +181,37 @@ describe("CudosAuraPool", () => {
 
     describe("withdrawPayments()", () => {
         it("valid", async () => {
-            await cudosAuraPool.connect(user).sendPayment(id, cudosAddr, {
+            await cudosAuraPool.connect(user).sendPayment(nftId, cudosAddr, {
                 value: amount,
             });
 
-            await cudosAuraPool.unlockPaymentWithdraw(id);
+            await cudosAuraPool.unlockPaymentWithdraw(1);
 
             await expect(cudosAuraPool.connect(user).withdrawPayments())
                 .emit(cudosAuraPool, "PaymentsWithdrawn")
                 .withArgs(user.address)
                 .and.to.changeEtherBalances([user, cudosAuraPool], [amount, -amount]);
 
-            expect(await cudosAuraPool.getPaymentStatus(id)).equal(PaymentStatus.Returned);
+            expect(await cudosAuraPool.getPaymentStatus(1)).equal(PaymentStatus.Returned);
         });
 
         it("nothing to withdraw", async () => {
-            await cudosAuraPool.sendPayment(id, cudosAddr, {
+            await cudosAuraPool.sendPayment(nftId, cudosAddr, {
                 value: amount,
             });
 
-            await cudosAuraPool.unlockPaymentWithdraw(id);
+            await cudosAuraPool.unlockPaymentWithdraw(1);
 
             await expect(cudosAuraPool.connect(user).withdrawPayments())
                 .emit(cudosAuraPool, "PaymentsWithdrawn")
                 .withArgs(user.address)
                 .and.to.changeEtherBalances([user, cudosAuraPool], [0, 0]);
 
-            expect(await cudosAuraPool.getPaymentStatus(id)).equal(PaymentStatus.Withdrawable);
+            expect(await cudosAuraPool.getPaymentStatus(1)).equal(PaymentStatus.Withdrawable);
         });
 
         it("payment not withdrawable", async () => {
-            await cudosAuraPool.connect(user).sendPayment(id, cudosAddr, {
+            await cudosAuraPool.connect(user).sendPayment(nftId, cudosAddr, {
                 value: amount,
             });
 
@@ -178,35 +224,35 @@ describe("CudosAuraPool", () => {
 
     describe("markPaymentFinished()", () => {
         it("valid", async () => {
-            await cudosAuraPool.sendPayment(id, cudosAddr, {
+            await cudosAuraPool.sendPayment(nftId, cudosAddr, {
                 value: amount,
             });
 
-            await expect(cudosAuraPool.markPaymentFinished(id))
+            await expect(cudosAuraPool.markPaymentFinished(1))
                 .emit(cudosAuraPool, "MarkedAsFinished")
-                .withArgs(id);
+                .withArgs(1);
 
-            expect(await cudosAuraPool.getPaymentStatus(id)).equal(PaymentStatus.Finished);
+            expect(await cudosAuraPool.getPaymentStatus(1)).equal(PaymentStatus.Finished);
         });
 
         it("not admin", async () => {
-            await cudosAuraPool.sendPayment(id, cudosAddr, { value: amount });
+            await cudosAuraPool.sendPayment(nftId, cudosAddr, { value: amount });
 
-            await expect(cudosAuraPool.connect(user).markPaymentFinished(id)).revertedWith(
+            await expect(cudosAuraPool.connect(user).markPaymentFinished(1)).revertedWith(
                 "Recipient is not an admin!"
             );
         });
 
         it("not locked status", async () => {
-            await cudosAuraPool.sendPayment(id, cudosAddr, { value: amount });
+            await cudosAuraPool.sendPayment(nftId, cudosAddr, { value: amount });
 
-            await cudosAuraPool.unlockPaymentWithdraw(id);
+            await cudosAuraPool.unlockPaymentWithdraw(1);
 
-            await expect(cudosAuraPool.markPaymentFinished(id)).revertedWith("Payment not locked!");
+            await expect(cudosAuraPool.markPaymentFinished(1)).revertedWith("Payment not locked!");
         });
 
         it("not existing payment", async () => {
-            await expect(cudosAuraPool.markPaymentFinished(id)).revertedWith(
+            await expect(cudosAuraPool.markPaymentFinished(1)).revertedWith(
                 "Non existing paymentId!"
             );
         });
@@ -214,22 +260,26 @@ describe("CudosAuraPool", () => {
 
     describe("withdrawFinishedPayments()", () => {
         it("valid", async () => {
-            await cudosAuraPool.connect(user).sendPayment(id, cudosAddr, {
+            await cudosAuraPool.connect(user).sendPayment(nftId, cudosAddr, {
                 value: amount,
             });
 
-            await cudosAuraPool.markPaymentFinished(id);
+            expect(await cudosAuraPool.getPaymentStatus(1)).equal(PaymentStatus.Locked);
+
+            await cudosAuraPool.markPaymentFinished(1);
+
+            expect(await cudosAuraPool.getPaymentStatus(1)).equal(PaymentStatus.Finished);
 
             await expect(cudosAuraPool.withdrawFinishedPayments())
                 .emit(cudosAuraPool, "FinishedPaymentsWithdrawn")
                 .withArgs(admin.address)
                 .and.to.changeEtherBalances([admin, cudosAuraPool], [amount, -amount]);
 
-            expect(await cudosAuraPool.getPaymentStatus(id)).equal(PaymentStatus.Withdrawn);
+            expect(await cudosAuraPool.getPaymentStatus(1)).equal(PaymentStatus.Withdrawn);
         });
 
         it("payment not finished", async () => {
-            await cudosAuraPool.connect(user).sendPayment(id, cudosAddr, {
+            await cudosAuraPool.connect(user).sendPayment(nftId, cudosAddr, {
                 value: amount,
             });
 
@@ -248,15 +298,15 @@ describe("CudosAuraPool", () => {
 
     describe("getPaymentStatus()", () => {
         it("valid", async () => {
-            await cudosAuraPool.sendPayment(id, cudosAddr, { value: amount });
+            await cudosAuraPool.sendPayment(nftId, cudosAddr, { value: amount });
 
-            await cudosAuraPool.unlockPaymentWithdraw(id);
+            await cudosAuraPool.unlockPaymentWithdraw(1);
 
-            expect(await cudosAuraPool.getPaymentStatus(id)).equal(PaymentStatus.Withdrawable);
+            expect(await cudosAuraPool.getPaymentStatus(1)).equal(PaymentStatus.Withdrawable);
         });
 
         it("not existing paymentId", async () => {
-            await expect(cudosAuraPool.getPaymentStatus(id)).revertedWith(
+            await expect(cudosAuraPool.getPaymentStatus(1)).revertedWith(
                 "Non existing paymentId!"
             );
         });
@@ -264,7 +314,7 @@ describe("CudosAuraPool", () => {
 
     describe("getPayments()", () => {
         it("valid", async () => {
-            await cudosAuraPool.connect(user).sendPayment(id, cudosAddr, { value: amount });
+            await cudosAuraPool.connect(user).sendPayment(nftId, cudosAddr, { value: amount });
 
             const payments = await cudosAuraPool.connect(user).getPayments();
             expect(payments).length(1);
@@ -272,22 +322,24 @@ describe("CudosAuraPool", () => {
             const payment = payments[0];
 
             expect({
-                id: payment.id,
+                id: payment.paymentId,
+                nftId: payment.nftId,
                 payee: payment.payee,
                 amount: payment.amount,
                 status: payment.status,
                 cudosAddress: payment.cudosAddress,
             }).eql({
-                id: id,
+                id: 1,
+                nftId: ethers.utils.hexlify(nftId),
                 payee: user.address,
                 amount: amount,
                 status: PaymentStatus.Locked,
-                cudosAddress: cudosAddr,
+                cudosAddress: ethers.utils.hexlify(cudosAddr),
             });
         });
 
         it("no payments", async () => {
-            await cudosAuraPool.sendPayment(id, cudosAddr, { value: amount });
+            await cudosAuraPool.sendPayment(nftId, cudosAddr, { value: amount });
 
             const payments = await cudosAuraPool.connect(user).getPayments();
             expect(payments).length(0);
