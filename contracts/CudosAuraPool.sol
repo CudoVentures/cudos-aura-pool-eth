@@ -32,6 +32,7 @@ contract CudosAuraPool is ReentrancyGuard {
     mapping(address => uint32[]) public paymentIdsByAddress;
     mapping(bytes => bool) public pendingNftIds;
     
+    address private relayerAddress;
     uint32 private nextPaymentId;
 
     event NftMinted(
@@ -45,11 +46,20 @@ contract CudosAuraPool is ReentrancyGuard {
     event MarkedAsFinished(uint32 paymentId);
     event PaymentsWithdrawn(address payee);
     event FinishedPaymentsWithdrawn(address withdrawer);
+    event ChangedRelayerAddress(address relayerAddress);
 
     modifier onlyAdmin() {
         require(
             cudosAccessControls.hasAdminRole(msg.sender),
             "Recipient is not an admin!"
+        );
+        _;
+    }
+
+    modifier onlyRelayer() {
+        require(
+            msg.sender == relayerAddress,
+            "Msg sender not the relayer."
         );
         _;
     }
@@ -62,6 +72,19 @@ contract CudosAuraPool is ReentrancyGuard {
         );
         cudosAccessControls = _cudosAccessControls;
         nextPaymentId = 1;
+        relayerAddress = msg.sender;
+    }
+
+    function setRelayerAddress(address _relayerAddress)
+        external
+        nonReentrant
+        onlyAdmin
+    {
+        require(_relayerAddress != address(0), "Invalid relayer address");
+
+        relayerAddress = _relayerAddress;
+
+        emit ChangedRelayerAddress(_relayerAddress);
     }
 
     function sendPayment(bytes memory nftId, bytes memory cudosAddress)
@@ -90,7 +113,7 @@ contract CudosAuraPool is ReentrancyGuard {
 
     function unlockPaymentWithdraw(uint32 paymentId)
         external
-        onlyAdmin
+        onlyRelayer
         nonReentrant
     {
         require(payments[paymentId].amount > 0, "Non existing paymentId!");
@@ -128,7 +151,7 @@ contract CudosAuraPool is ReentrancyGuard {
 
     function markPaymentFinished(uint32 paymentId)
         external
-        onlyAdmin
+        onlyRelayer
         nonReentrant
     {
         require(payments[paymentId].amount > 0, "Non existing paymentId!");

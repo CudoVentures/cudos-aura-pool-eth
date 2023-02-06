@@ -154,11 +154,21 @@ describe("CudosAuraPool", () => {
             expect(await cudosAuraPool.getPaymentStatus(1)).equal(PaymentStatus.Withdrawable);
         });
 
-        it("not admin", async () => {
+        it("not relayer", async () => {
             await cudosAuraPool.sendPayment(nftId, cudosAddr, { value: amount });
 
             await expect(cudosAuraPool.connect(user).unlockPaymentWithdraw(1)).revertedWith(
-                "Recipient is not an admin!"
+                "Msg sender not the relayer."
+            );
+        });
+
+        it("not relayer after relayerAddress change", async () => {
+            await cudosAuraPool.sendPayment(nftId, cudosAddr, { value: amount });
+
+            await cudosAuraPool.setRelayerAddress(user.address);
+
+            await expect(cudosAuraPool.unlockPaymentWithdraw(1)).revertedWith(
+                "Msg sender not the relayer."
             );
         });
 
@@ -239,7 +249,18 @@ describe("CudosAuraPool", () => {
             await cudosAuraPool.sendPayment(nftId, cudosAddr, { value: amount });
 
             await expect(cudosAuraPool.connect(user).markPaymentFinished(1)).revertedWith(
-                "Recipient is not an admin!"
+                "Msg sender not the relayer."
+            );
+        });
+
+
+        it("not relayer after relayerAddress change", async () => {
+            await cudosAuraPool.sendPayment(nftId, cudosAddr, { value: amount });
+
+            await cudosAuraPool.setRelayerAddress(user.address);
+
+            await expect(cudosAuraPool.markPaymentFinished(1)).revertedWith(
+                "Msg sender not the relayer."
             );
         });
 
@@ -345,4 +366,19 @@ describe("CudosAuraPool", () => {
             expect(payments).length(0);
         });
     });
+
+    describe("setRelayerAddress()", () => {
+        it("happy path", async () => {
+            await expect(cudosAuraPool.setRelayerAddress(user.address))
+                .emit(cudosAuraPool, "ChangedRelayerAddress")
+                .withArgs(user.address);
+        })
+
+        it("not admin", async () => {
+            await expect(cudosAuraPool.connect(user).setRelayerAddress(user.address))
+                .revertedWith(
+                    "Recipient is not an admin!"
+                );
+        })
+    })
 });
