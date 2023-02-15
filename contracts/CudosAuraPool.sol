@@ -11,41 +11,49 @@ contract CudosAuraPool is ReentrancyGuard {
     using SafeMath for uint256;
 
     struct Payment {
-        bytes32 id;
+        uint32 paymentId;
         address payee;
         uint256 amount;
         PaymentStatus status;
-        bytes32 cudosAddress;
+        bytes cudosAddress;
     }
 
     enum PaymentStatus {
         Locked,
         Withdrawable,
-        Returned,
-        Finished,
-        Withdrawn
+        Returned
     }
 
     CudosAccessControls public immutable cudosAccessControls;
-    mapping(bytes32 => Payment) public payments;
-    mapping(address => bytes32[]) public paymentIdsByAddress;
-    bytes32[] public paymentIds;
+    mapping(uint32 => Payment) public payments;
+    mapping(address => uint32[]) public paymentIdsByAddress;
+    
+    address private relayerAddress;
+    uint32 private nextPaymentId;
 
     event NftMinted(
-        bytes32 paymentId,
+        uint32 paymentId,
         uint256 amount,
         address indexed sender,
-        bytes32 cudosAddress
+        bytes cudosAddress
     );
-    event WithdrawalsUnlocked(bytes32 paymentId);
-    event MarkedAsFinished(bytes32 paymentId);
+    event WithdrawalsUnlocked(uint32 paymentId);
     event PaymentsWithdrawn(address payee);
     event FinishedPaymentsWithdrawn(address withdrawer);
+    event ChangedRelayerAddress(address relayerAddress);
 
     modifier onlyAdmin() {
         require(
             cudosAccessControls.hasAdminRole(msg.sender),
             "Recipient is not an admin!"
+        );
+        _;
+    }
+
+    modifier onlyRelayer() {
+        require(
+            msg.sender == relayerAddress,
+            "Msg sender not the relayer."
         );
         _;
     }
@@ -57,33 +65,45 @@ contract CudosAuraPool is ReentrancyGuard {
             "Invalid CudosAccessControls address!"
         );
         cudosAccessControls = _cudosAccessControls;
+        nextPaymentId = 1;
+        relayerAddress = msg.sender;
     }
 
-    function sendPayment(bytes32 paymentId, bytes32 cudosAddress)
+    function setRelayerAddress(address _relayerAddress)
+        external
+        nonReentrant
+        onlyAdmin
+    {
+        require(_relayerAddress != address(0), "Invalid relayer address");
+
+        relayerAddress = _relayerAddress;
+
+        emit ChangedRelayerAddress(_relayerAddress);
+    }
+
+    function sendPayment(bytes memory cudosAddress)
         external
         payable
         nonReentrant
     {
         require(msg.value > 0, "Amount must be positive!");
-        require(payments[paymentId].amount == 0, "PaymentId already used!");
-        require(paymentId != bytes32(0), "PaymentId cannot be empty!");
-        require(cudosAddress != bytes32(0), "CudosAddress cannot be empty!");
+        require(cudosAddress.length != 0, "CudosAddress cannot be empty!");
 
-        Payment storage payment = payments[paymentId];
-        payment.id = paymentId;
+        Payment storage payment = payments[nextPaymentId];
+        payment.paymentId = nextPaymentId;
         payment.payee = msg.sender;
         payment.amount = msg.value;
         payment.cudosAddress = cudosAddress;
 
-        paymentIdsByAddress[msg.sender].push(paymentId);
-        paymentIds.push(paymentId);
+        paymentIdsByAddress[msg.sender].push(nextPaymentId);
+        nextPaymentId += 1;
 
-        emit NftMinted(paymentId, msg.value, msg.sender, cudosAddress);
+        emit NftMinted(payment.paymentId, msg.value, msg.sender, cudosAddress);
     }
 
-    function unlockPaymentWithdraw(bytes32 paymentId)
+    function unlockPaymentWithdraw(uint32 paymentId)
         external
-        onlyAdmin
+        onlyRelayer
         nonReentrant
     {
         require(payments[paymentId].amount > 0, "Non existing paymentId!");
@@ -92,16 +112,16 @@ contract CudosAuraPool is ReentrancyGuard {
             "Payment is not locked!"
         );
         payments[paymentId].status = PaymentStatus.Withdrawable;
-
+        
         emit WithdrawalsUnlocked(paymentId);
     }
 
     function withdrawPayments() external nonReentrant {
-        if (paymentIdsByAddress[msg.sender].length == 0) {
-            return;
-        }
+        require(paymentIdsByAddress[msg.sender].length != 0,
+            "no payments for that address"
+        );
 
-        bytes32[] memory ids = paymentIdsByAddress[msg.sender];
+        uint32[] memory ids = paymentIdsByAddress[msg.sender];
         uint256 totalAmount;
         for (uint256 i = 0; i < ids.length; ++i) {
             Payment storage payment = payments[ids[i]];
@@ -113,44 +133,34 @@ contract CudosAuraPool is ReentrancyGuard {
             payment.status = PaymentStatus.Returned;
         }
 
+         require(totalAmount > 0,
+            "Nothing to withdraw"
+        );
+
         payable(msg.sender).transfer(totalAmount);
 
         emit PaymentsWithdrawn(msg.sender);
     }
 
-    function markPaymentFinished(bytes32 paymentId)
-        external
-        onlyAdmin
-        nonReentrant
-    {
-        require(payments[paymentId].amount > 0, "Non existing paymentId!");
-        require(
-            payments[paymentId].status == PaymentStatus.Locked,
-            "Payment not locked!"
-        );
-        payments[paymentId].status = PaymentStatus.Finished;
-
-        emit MarkedAsFinished(paymentId);
-    }
-
-    function withdrawFinishedPayments() external onlyAdmin nonReentrant {
-        uint256 totalAmount;
-        for (uint256 i = 0; i < paymentIds.length; ++i) {
-            Payment storage payment = payments[paymentIds[i]];
-            if (payment.status != PaymentStatus.Finished) {
-                continue;
+    function withdrawFinishedPayments(uint256 amount) external onlyAdmin nonReentrant {
+        uint256 withdrawableBalance = address(this).balance;
+        for (uint32 i = 1; i < nextPaymentId; ++i) {
+            Payment storage payment = payments[i];
+            if (payment.status == PaymentStatus.Withdrawable) {
+                withdrawableBalance -= payment.amount;
             }
-
-            totalAmount += payment.amount;
-            payment.status = PaymentStatus.Withdrawn;
         }
 
-        payable(msg.sender).transfer(totalAmount);
+        require(withdrawableBalance >= amount, 
+            "Amount > available"
+        );
+
+        payable(msg.sender).transfer(withdrawableBalance);
 
         emit FinishedPaymentsWithdrawn(msg.sender);
     }
 
-    function getPaymentStatus(bytes32 paymentId)
+    function getPaymentStatus(uint32 paymentId)
         external
         view
         returns (PaymentStatus)
@@ -161,7 +171,7 @@ contract CudosAuraPool is ReentrancyGuard {
     }
 
     function getPayments() external view returns (Payment[] memory) {
-        bytes32[] memory ids = paymentIdsByAddress[msg.sender];
+        uint32[] memory ids = paymentIdsByAddress[msg.sender];
         Payment[] memory paymentsFiltered = new Payment[](ids.length);
 
         for (uint256 i = 0; i < ids.length; ++i) {
