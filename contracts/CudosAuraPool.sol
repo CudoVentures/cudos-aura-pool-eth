@@ -12,7 +12,6 @@ contract CudosAuraPool is ReentrancyGuard {
 
     struct Payment {
         uint32 paymentId;
-        bytes nftId;
         address payee;
         uint256 amount;
         PaymentStatus status;
@@ -22,28 +21,23 @@ contract CudosAuraPool is ReentrancyGuard {
     enum PaymentStatus {
         Locked,
         Withdrawable,
-        Returned,
-        Finished,
-        Withdrawn
+        Returned
     }
 
     CudosAccessControls public immutable cudosAccessControls;
     mapping(uint32 => Payment) public payments;
     mapping(address => uint32[]) public paymentIdsByAddress;
-    mapping(bytes => bool) public pendingNftIds;
     
     address private relayerAddress;
     uint32 private nextPaymentId;
 
     event NftMinted(
         uint32 paymentId,
-        bytes nftId,
         uint256 amount,
         address indexed sender,
         bytes cudosAddress
     );
     event WithdrawalsUnlocked(uint32 paymentId);
-    event MarkedAsFinished(uint32 paymentId);
     event PaymentsWithdrawn(address payee);
     event FinishedPaymentsWithdrawn(address withdrawer);
     event ChangedRelayerAddress(address relayerAddress);
@@ -87,28 +81,24 @@ contract CudosAuraPool is ReentrancyGuard {
         emit ChangedRelayerAddress(_relayerAddress);
     }
 
-    function sendPayment(bytes memory nftId, bytes memory cudosAddress)
+    function sendPayment(bytes memory cudosAddress)
         external
         payable
         nonReentrant
     {
         require(msg.value > 0, "Amount must be positive!");
-        require(nftId.length != 0, "NftId cannot be empty!");
         require(cudosAddress.length != 0, "CudosAddress cannot be empty!");
-        require(pendingNftIds[nftId] == false, "NftId minted or pending!");
 
         Payment storage payment = payments[nextPaymentId];
         payment.paymentId = nextPaymentId;
-        payment.nftId = nftId;
         payment.payee = msg.sender;
         payment.amount = msg.value;
         payment.cudosAddress = cudosAddress;
 
         paymentIdsByAddress[msg.sender].push(nextPaymentId);
-        pendingNftIds[nftId] = true;
         nextPaymentId += 1;
 
-        emit NftMinted(payment.paymentId , nftId, msg.value, msg.sender, cudosAddress);
+        emit NftMinted(payment.paymentId, msg.value, msg.sender, cudosAddress);
     }
 
     function unlockPaymentWithdraw(uint32 paymentId)
@@ -122,15 +112,14 @@ contract CudosAuraPool is ReentrancyGuard {
             "Payment is not locked!"
         );
         payments[paymentId].status = PaymentStatus.Withdrawable;
-        pendingNftIds[payments[paymentId].nftId] = false;
         
         emit WithdrawalsUnlocked(paymentId);
     }
 
     function withdrawPayments() external nonReentrant {
-        if (paymentIdsByAddress[msg.sender].length == 0) {
-            return;
-        }
+        require(paymentIdsByAddress[msg.sender].length != 0,
+            "no payments for that address"
+        );
 
         uint32[] memory ids = paymentIdsByAddress[msg.sender];
         uint256 totalAmount;
@@ -144,39 +133,29 @@ contract CudosAuraPool is ReentrancyGuard {
             payment.status = PaymentStatus.Returned;
         }
 
+         require(totalAmount > 0,
+            "Nothing to withdraw"
+        );
+
         payable(msg.sender).transfer(totalAmount);
 
         emit PaymentsWithdrawn(msg.sender);
     }
 
-    function markPaymentFinished(uint32 paymentId)
-        external
-        onlyRelayer
-        nonReentrant
-    {
-        require(payments[paymentId].amount > 0, "Non existing paymentId!");
-        require(
-            payments[paymentId].status == PaymentStatus.Locked,
-            "Payment not locked!"
-        );
-        payments[paymentId].status = PaymentStatus.Finished;
-
-        emit MarkedAsFinished(paymentId);
-    }
-
-    function withdrawFinishedPayments() external onlyAdmin nonReentrant {
-        uint256 totalAmount;
+    function withdrawFinishedPayments(uint256 amount) external onlyAdmin nonReentrant {
+        uint256 withdrawableBalance = address(this).balance;
         for (uint32 i = 1; i < nextPaymentId; ++i) {
             Payment storage payment = payments[i];
-            if (payment.status != PaymentStatus.Finished) {
-                continue;
+            if (payment.status == PaymentStatus.Withdrawable) {
+                withdrawableBalance -= payment.amount;
             }
-
-            totalAmount += payment.amount;
-            payment.status = PaymentStatus.Withdrawn;
         }
 
-        payable(msg.sender).transfer(totalAmount);
+        require(withdrawableBalance >= amount, 
+            "Amount > available"
+        );
+
+        payable(msg.sender).transfer(withdrawableBalance);
 
         emit FinishedPaymentsWithdrawn(msg.sender);
     }

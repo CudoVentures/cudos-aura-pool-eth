@@ -16,11 +16,14 @@ async function main() {
         console.log("CudosAccessControl contract deployed at address " + cudosAccessControlAddress);
 
         await cudosAccessControls.deployTransaction.wait(5);
-
-        await run("verify:verify", {
-            address: cudosAccessControlAddress,
-            constructorArguments: [],
-        });
+        try {
+            await run("verify:verify", {
+                address: cudosAccessControlAddress,
+                constructorArguments: [],
+            });
+        } catch (e){
+            console.log(e)
+        }
     }
 
 
