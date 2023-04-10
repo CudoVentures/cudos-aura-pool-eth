@@ -1,11 +1,11 @@
 {
-  "name": "cudos-aura-pool-eth",
+  "name": "cudos-markets-eth",
   "scripts": {
     "build": "npx hardhat compile",
     "test": "npx hardhat test",
     "deploy": "npx hardhat run ./scripts/deploy.ts",
     "coverage": "npx hardhat coverage --network localhost",
-    "solhint": "npx solhint './contracts/CudosAuraPool.sol' "
+    "solhint": "npx solhint './contracts/CudosMarkets.sol' "
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-chai-matchers": "^1.0.5",

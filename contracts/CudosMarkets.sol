@@ -7,7 +7,7 @@ import "@openzeppelin/contracts/utils/Address.sol";
 import "./CudosAccessControls.sol";
 import "hardhat/console.sol";
 
-contract CudosAuraPool is ReentrancyGuard {
+contract CudosMarkets is ReentrancyGuard {
     using SafeMath for uint256;
 
     struct Payment {

@@ -1,4 +1,4 @@
-# CUDOS AuraPool Eth Payments Contract
+# CUDOS Markets Eth Payments Contract
 
 ```shell
 npx hardhat help

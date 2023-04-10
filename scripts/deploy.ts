@@ -1,5 +1,5 @@
 import { run, ethers } from "hardhat";
-import { CudosAccessControls__factory, CudosAuraPool__factory } from "../typechain-types";
+import { CudosAccessControls__factory, CudosMarkets__factory } from "../typechain-types";
 
 async function main() {
     const [wallet] = await ethers.getSigners();
@@ -27,14 +27,14 @@ async function main() {
     }
 
 
-    const cudosAuraPool = await new CudosAuraPool__factory(wallet).deploy(cudosAccessControlAddress);
-    await cudosAuraPool.deployed();
-    console.log("CudosAuraPool contract deployed at address " + cudosAuraPool.address);
+    const cudosMarkets = await new CudosMarkets__factory(wallet).deploy(cudosAccessControlAddress);
+    await cudosMarkets.deployed();
+    console.log("CudosMarkets contract deployed at address " + cudosMarkets.address);
 
-    await cudosAuraPool.deployTransaction.wait(5);
+    await cudosMarkets.deployTransaction.wait(5);
 
     await run("verify:verify", {
-        address: cudosAuraPool.address,
+        address: cudosMarkets.address,
         constructorArguments: [cudosAccessControlAddress],
     });
 }
