@@ -23,6 +23,7 @@ describe("CudosMarkets", () => {
         Locked,
         Withdrawable,
         Returned,
+        Withdrawn
     }
 
     beforeEach(async () => {
@@ -200,7 +201,7 @@ describe("CudosMarkets", () => {
             expect(await cudosMarkets.getPaymentStatus(2)).equal(PaymentStatus.Withdrawable);
             expect(await cudosMarkets.getPaymentStatus(3)).equal(PaymentStatus.Locked);
 
-            await expect(cudosMarkets.withdrawFinishedPayments(amount))
+            await expect(cudosMarkets.withdrawFinishedPayments())
                 .emit(cudosMarkets, "FinishedPaymentsWithdrawn")
                 .withArgs(admin.address)
                 .and.to.changeEtherBalances([admin, cudosMarkets], [amount, -amount]);
@@ -209,12 +210,8 @@ describe("CudosMarkets", () => {
 
             expect(balance).equal(amount);
 
-            await expect(cudosMarkets.withdrawFinishedPayments(amount)).revertedWith(
-                "Amount > available"
-            );
-
             await expect(cudosMarkets.withdrawPayments())
-                .emit(cudosMarkets, "FinishedPaymentsWithdrawn")
+                .emit(cudosMarkets, "PaymentsWithdrawn")
                 .withArgs(admin.address)
                 .and.to.changeEtherBalances([admin, cudosMarkets], [amount, -amount]);
 
@@ -223,7 +220,7 @@ describe("CudosMarkets", () => {
             expect(balancelast).equal(ethers.utils.parseEther("0"));
         });
 
-        it("withdrawable payment nto included", async () => {
+        it("withdrawable payment not included", async () => {
             await cudosMarkets.sendPayment(cudosAddr, {
                 value: amount,
             });
@@ -236,13 +233,42 @@ describe("CudosMarkets", () => {
             const balance = await cudosMarkets.provider.getBalance(cudosMarkets.address);
             expect(balance).equal(amount);
 
-            await expect(cudosMarkets.withdrawFinishedPayments(amount)).revertedWith(
-                "Amount > available"
+            await expect(cudosMarkets.withdrawFinishedPayments()).revertedWith(
+                "Nothing to withdraw"
+            )
+        });
+        it("withdrawn payment not included", async () => {
+            await cudosMarkets.sendPayment(cudosAddr, {
+                value: amount,
+            });
+            expect(await cudosMarkets.getPaymentStatus(1)).equal(PaymentStatus.Locked);
+
+            await expect(cudosMarkets.withdrawFinishedPayments())
+                .emit(cudosMarkets, "FinishedPaymentsWithdrawn")
+                .withArgs(admin.address)
+                .and.to.changeEtherBalances([admin, cudosMarkets], [amount, -amount]);
+
+            expect(await cudosMarkets.getPaymentStatus(1)).equal(PaymentStatus.Withdrawn);
+
+            await cudosMarkets.sendPayment(cudosAddr, {
+                value: amount,
+            });
+            expect(await cudosMarkets.getPaymentStatus(2)).equal(PaymentStatus.Locked);
+
+            await expect(cudosMarkets.withdrawFinishedPayments())
+                .emit(cudosMarkets, "FinishedPaymentsWithdrawn")
+                .withArgs(admin.address)
+                .and.to.changeEtherBalances([admin, cudosMarkets], [amount, -amount]);
+
+            expect(await cudosMarkets.getPaymentStatus(2)).equal(PaymentStatus.Withdrawn);
+
+            await expect(cudosMarkets.withdrawFinishedPayments()).revertedWith(
+                "Nothing to withdraw"
             )
         });
 
         it("not admin", async () => {
-            await expect(cudosMarkets.connect(user).withdrawFinishedPayments(amount)).revertedWith(
+            await expect(cudosMarkets.connect(user).withdrawFinishedPayments()).revertedWith(
                 "Recipient is not an admin!"
             );
         });

@@ -21,7 +21,8 @@ contract CudosMarkets is ReentrancyGuard {
     enum PaymentStatus {
         Locked,
         Withdrawable,
-        Returned
+        Returned,
+        Withdrawn
     }
 
     CudosAccessControls public immutable cudosAccessControls;
@@ -142,17 +143,18 @@ contract CudosMarkets is ReentrancyGuard {
         emit PaymentsWithdrawn(msg.sender);
     }
 
-    function withdrawFinishedPayments(uint256 amount) external onlyAdmin nonReentrant {
-        uint256 withdrawableBalance = address(this).balance;
+    function withdrawFinishedPayments() external onlyAdmin nonReentrant {
+        uint256 withdrawableBalance = 0;
         for (uint32 i = 1; i < nextPaymentId; ++i) {
             Payment storage payment = payments[i];
-            if (payment.status == PaymentStatus.Withdrawable) {
-                withdrawableBalance -= payment.amount;
+            if (payment.status == PaymentStatus.Locked) {
+                withdrawableBalance += payment.amount;
+                payment.status = PaymentStatus.Withdrawn;
             }
         }
 
-        require(withdrawableBalance >= amount, 
-            "Amount > available"
+        require(withdrawableBalance > 0,
+            "Nothing to withdraw"
         );
 
         payable(msg.sender).transfer(withdrawableBalance);
