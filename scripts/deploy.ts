@@ -1,10 +1,13 @@
-import { run, ethers } from "hardhat";
+import { run, ethers, network } from "hardhat";
 import { CudosAccessControls__factory, CudosMarkets__factory } from "../typechain-types";
 
 async function main() {
     const [wallet] = await ethers.getSigners();
-
-    let cudosAccessControlAddress = process.env.CUDOS_ACCESS_CONTROLS_ADDRESS ?? "";
+    
+    let cudosAccessControlAddress = (network.name == "mainnet" 
+        ? process.env.MAINNET_CUDOS_ACCESS_CONTROLS_ADDRESS 
+        : process.env.SEPOLIA_CUDOS_ACCESS_CONTROLS_ADDRESS)
+        ?? "";
 
     if (cudosAccessControlAddress == "") {
         console.log(
@@ -25,7 +28,6 @@ async function main() {
             console.log(e)
         }
     }
-
 
     const cudosMarkets = await new CudosMarkets__factory(wallet).deploy(cudosAccessControlAddress);
     await cudosMarkets.deployed();

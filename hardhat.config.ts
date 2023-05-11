@@ -4,6 +4,8 @@ import "@nomicfoundation/hardhat-toolbox";
 import "@nomicfoundation/hardhat-chai-matchers";
 import "@nomiclabs/hardhat-ethers";
 import "solidity-coverage";
+import "@nomiclabs/hardhat-etherscan";
+
 
 dotenv.config({ path: "./.env" });
 
@@ -38,12 +40,12 @@ const config: HardhatUserConfig = {
     },
     networks: {
         sepolia: {
-            url: `${process.env.NODE_URL ?? ""}`,
-            accounts: [process.env.PRIVATE_KEY ?? ""],
+            url: `${process.env.SEPOLIA_NODE_URL ?? ""}`,
+            accounts: [process.env.SEPOLIA_PRIVATE_KEY ?? ""],
         },
         mainnet: {
-            url: `${process.env.NODE_URL ?? ""}`,
-            accounts: [process.env.PRIVATE_KEY ?? ""],
+            url: `${process.env.MAINNET_NODE_URL ?? ""}`,
+            accounts: [process.env.MAINNET_PRIVATE_KEY ?? ""],
         },
     },
     gasReporter: {
@@ -51,8 +53,8 @@ const config: HardhatUserConfig = {
     },
     etherscan: {
         apiKey: {
-            sepolia: process.env.ETHERSCAN_API_KEY ?? "",
-            mainnet: process.env.ETHERSCAN_API_KEY ?? "",
+            sepolia: process.env.SEPOLIA_ETHERSCAN_API_KEY ?? "",
+            mainnet: process.env.MAINNET_ETHERSCAN_API_KEY ?? "",
         }
     },
     mocha: {

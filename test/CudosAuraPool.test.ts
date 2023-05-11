@@ -11,6 +11,7 @@ import {
 describe("CudosMarkets", () => {
     let admin: SignerWithAddress;
     let user: SignerWithAddress;
+    let accessControlAdmin: SignerWithAddress;
     let cudosMarkets: CudosMarkets;
 
     const nftId = ethers.utils.toUtf8Bytes("7a00c0e9-0187-4652-9166-8cb55f611411");
@@ -27,15 +28,15 @@ describe("CudosMarkets", () => {
     }
 
     beforeEach(async () => {
-        [admin, user] = await ethers.getSigners();
+        [admin, user, accessControlAdmin] = await ethers.getSigners();
 
-        const cudosAccessControls = await new CudosAccessControls__factory(admin).deploy();
+        const cudosAccessControls = await new CudosAccessControls__factory(accessControlAdmin).deploy();
         await cudosAccessControls.deployed();
 
         cudosMarkets = await new CudosMarkets__factory(admin).deploy(cudosAccessControls.address);
         await cudosMarkets.deployed();
 
-        await cudosAccessControls.addAdminRole(cudosMarkets.address);
+        await cudosAccessControls.addAdminRole(accessControlAdmin.address);
     });
 
     describe("constructor()", () => {
@@ -106,7 +107,7 @@ describe("CudosMarkets", () => {
         it("not relayer after relayerAddress change", async () => {
             await cudosMarkets.sendPayment(cudosAddr, { value: amount });
 
-            await cudosMarkets.setRelayerAddress(user.address);
+            await cudosMarkets.connect(accessControlAdmin).setRelayerAddress(user.address);
 
             await expect(cudosMarkets.unlockPaymentWithdraw(1)).revertedWith(
                 "Msg sender not the relayer."
@@ -201,10 +202,10 @@ describe("CudosMarkets", () => {
             expect(await cudosMarkets.getPaymentStatus(2)).equal(PaymentStatus.Withdrawable);
             expect(await cudosMarkets.getPaymentStatus(3)).equal(PaymentStatus.Locked);
 
-            await expect(cudosMarkets.withdrawFinishedPayments())
+            await expect(cudosMarkets.connect(accessControlAdmin).withdrawFinishedPayments())
                 .emit(cudosMarkets, "FinishedPaymentsWithdrawn")
-                .withArgs(admin.address)
-                .and.to.changeEtherBalances([admin, cudosMarkets], [amount, -amount]);
+                .withArgs(accessControlAdmin.address)
+                .and.to.changeEtherBalances([accessControlAdmin, cudosMarkets], [amount, -amount]);
 
             const balance = await cudosMarkets.provider.getBalance(cudosMarkets.address);
 
@@ -233,7 +234,7 @@ describe("CudosMarkets", () => {
             const balance = await cudosMarkets.provider.getBalance(cudosMarkets.address);
             expect(balance).equal(amount);
 
-            await expect(cudosMarkets.withdrawFinishedPayments()).revertedWith(
+            await expect(cudosMarkets.connect(accessControlAdmin).withdrawFinishedPayments()).revertedWith(
                 "Nothing to withdraw"
             )
         });
@@ -243,10 +244,10 @@ describe("CudosMarkets", () => {
             });
             expect(await cudosMarkets.getPaymentStatus(1)).equal(PaymentStatus.Locked);
 
-            await expect(cudosMarkets.withdrawFinishedPayments())
+            await expect(cudosMarkets.connect(accessControlAdmin).withdrawFinishedPayments())
                 .emit(cudosMarkets, "FinishedPaymentsWithdrawn")
-                .withArgs(admin.address)
-                .and.to.changeEtherBalances([admin, cudosMarkets], [amount, -amount]);
+                .withArgs(accessControlAdmin.address)
+                .and.to.changeEtherBalances([accessControlAdmin, cudosMarkets], [amount, -amount]);
 
             expect(await cudosMarkets.getPaymentStatus(1)).equal(PaymentStatus.Withdrawn);
 
@@ -255,20 +256,20 @@ describe("CudosMarkets", () => {
             });
             expect(await cudosMarkets.getPaymentStatus(2)).equal(PaymentStatus.Locked);
 
-            await expect(cudosMarkets.withdrawFinishedPayments())
+            await expect(cudosMarkets.connect(accessControlAdmin).withdrawFinishedPayments())
                 .emit(cudosMarkets, "FinishedPaymentsWithdrawn")
-                .withArgs(admin.address)
-                .and.to.changeEtherBalances([admin, cudosMarkets], [amount, -amount]);
+                .withArgs(accessControlAdmin.address)
+                .and.to.changeEtherBalances([accessControlAdmin, cudosMarkets], [amount, -amount]);
 
             expect(await cudosMarkets.getPaymentStatus(2)).equal(PaymentStatus.Withdrawn);
 
-            await expect(cudosMarkets.withdrawFinishedPayments()).revertedWith(
+            await expect(cudosMarkets.connect(accessControlAdmin).withdrawFinishedPayments()).revertedWith(
                 "Nothing to withdraw"
             )
         });
 
         it("not admin", async () => {
-            await expect(cudosMarkets.connect(user).withdrawFinishedPayments()).revertedWith(
+            await expect(cudosMarkets.withdrawFinishedPayments()).revertedWith(
                 "Recipient is not an admin!"
             );
         });
@@ -324,7 +325,7 @@ describe("CudosMarkets", () => {
 
     describe("setRelayerAddress()", () => {
         it("happy path", async () => {
-            await expect(cudosMarkets.setRelayerAddress(user.address))
+            await expect(cudosMarkets.connect(accessControlAdmin).setRelayerAddress(user.address))
                 .emit(cudosMarkets, "ChangedRelayerAddress")
                 .withArgs(user.address);
         })
