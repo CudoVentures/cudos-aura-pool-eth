@@ -4,6 +4,7 @@
     "build": "npx hardhat compile",
     "test": "npx hardhat test",
     "deploy": "npx hardhat run ./scripts/deploy.ts",
+    "deploy-sepolia": "npx hardhat run ./scripts/deploy.ts --network sepolia",
     "coverage": "npx hardhat coverage --network localhost",
     "solhint": "npx solhint './contracts/CudosMarkets.sol' "
   },
